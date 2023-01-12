@@ -6,55 +6,70 @@
 #include <assert.h>
 #include <string.h>
 
-pthread_mutex_t front_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t rear_lock = PTHREAD_MUTEX_INITIALIZER;
+//
 
-typedef struct queue_node {
+struct node {
     char path[250];
-    struct queue_node *next;
-} queue_node;
+    struct node *next;
+};
 
-typedef struct queue {
-    struct queue_node *front;
-    struct queue_node *rear;
-    pthread_mutex_t front_lock;
-    pthread_mutex_t rear_lock;
-} queue;
+struct queue {
+    struct node *front;
+    struct node *rear;
+    pthread_mutex_t queue_lock;
+};
 
 // Create an empty queue
 struct queue* initqueue() {
-    struct queue *tq = (struct queue*)malloc(sizeof(struct queue));
-    tq->front = NULL;
-    tq->rear = NULL;
-    return tq;
+    struct queue *tasks = (struct queue*)malloc(sizeof(struct queue));
+    tasks->front = NULL;
+    tasks->rear = NULL;
+    pthread_mutex_t queue_lock = PTHREAD_MUTEX_INITIALIZER;
+    return tasks;
 }
 
-void enqueue(queue *tq, char *path) {
-    struct queue_node *temp = (struct queue_node *)malloc(sizeof(struct queue_node));
-    assert (temp != NULL);
+void enqueue(struct queue *tasks, char *path) {
+    struct node *newnode = (struct node*)malloc(sizeof(struct node));
+    assert(newnode != NULL);
 
-    strcpy(temp->path, path);
-    temp->next = NULL;
+    strcpy(newnode->path, path);
+    newnode->next = NULL;
 
-    pthread_mutex_lock(&tq->rear_lock);
-    tq->rear->next = temp;
-    // tq->rear = temp;
-    pthread_mutex_unlock(&tq->rear_lock);
-}
-
-void dequeue() {
-
-}
-
-void printqueue(queue *tq) {
-    struct queue_node *current = tq->front;
-    if (current == NULL) {
-        printf("Task queue is empty.");
+    //lock this section//
+    if (tasks->front == NULL) {
+        tasks->front = newnode;
+        tasks->rear = newnode;
     }
     else {
-        while(current != NULL) {
-            printf("%s - ", current->path);
-            current = current->next;
-        }
+        tasks->rear->next = newnode;
+        tasks->rear = newnode;
+    }
+    //unlock//
+}
+
+char* dequeue(struct queue *tasks) {
+    //lock this section//
+    struct node *temp = tasks->front;
+    if (temp == NULL) {
+        //unlock here//
+        return "empty";
+    }
+    else {
+        char *retval;
+        strcpy(retval, temp->path);
+        tasks->front = temp->next;
+        //unlock here//
+        free(temp);
+        return retval;
+    }
+}
+
+void printqueue(struct queue *tasks) {
+    struct node *current = tasks->front;
+    if (current == NULL)
+        printf("No tasks queued.\n");
+    while(current != NULL) {
+        printf("%s - ", current->path);
+        current = current->next;
     }
 }

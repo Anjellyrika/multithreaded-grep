@@ -64,9 +64,19 @@ int main(int argc, char *argv[]) {
     // Initialize task queue
     struct queue *taskqueue = initqueue();
     printqueue(taskqueue);
-    enqueue(taskqueue, "PLEASE!!!!!WORK!!!");
+    printf("initialize successful.\n");
+
+    enqueue(taskqueue, "pp");
+    enqueue(taskqueue, "rawrxd");
+    enqueue(taskqueue, "testdir");
     printqueue(taskqueue);
-    
+    printf("\nenqueue successful. \n");
+
+    char *tosearch = dequeue(taskqueue);
+    printf("dequeued %s\n", tosearch);
+    printqueue(taskqueue);
+    printf("\ndequeue successful. \n");
+
     // Thread creation
     pthread_t workers[n_workers]; // maybe use malloc instead?
     for (uintptr_t i = 0; i < n_workers; i++) {
