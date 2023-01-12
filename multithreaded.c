@@ -3,6 +3,8 @@
 #include <pthread.h>
 #include <assert.h>
 #include <stdint.h>
+#include <string.h>
+#include "task_queue.h"
 
 // Initialize condition variable
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
@@ -10,12 +12,13 @@ pthread_cond_t waiting = PTHREAD_COND_INITIALIZER;
 
 char *global_search_string;
 
-// taskqueue = [];
-
 void *search(void *id) {
     uintptr_t worker_ID = (uintptr_t) id;
     char *search_string = global_search_string;
+
+    /// REMOVE THIS SECTION LATER
     printf("Thread %ld searching for %s\n", worker_ID, search_string);
+    ///
 
     // what the threads will do
     /*
@@ -35,7 +38,6 @@ void *search(void *id) {
                     printf("[%d] PRESENT %d\n", worker_ID, file_path)
                 else:
                     printf("[%d] ABSENT %d\n", worker_ID, file_path)
-        closedir
     */
     return NULL;
 }
@@ -59,10 +61,14 @@ int main(int argc, char *argv[]) {
     It must also enqueue `rootpath` before launching any of the workers.
     */
     
-    pthread_t workers[n_workers]; // malloc
-    // enqueue `rootpath`
-
+    // Initialize task queue
+    struct queue *taskqueue = initqueue();
+    printqueue(taskqueue);
+    enqueue(taskqueue, "PLEASE!!!!!WORK!!!");
+    printqueue(taskqueue);
+    
     // Thread creation
+    pthread_t workers[n_workers]; // maybe use malloc instead?
     for (uintptr_t i = 0; i < n_workers; i++) {
         pthread_create(&workers[i], NULL, search, (void *)i);
     }
@@ -70,6 +76,7 @@ int main(int argc, char *argv[]) {
     for (uintptr_t i = 0; i < n_workers; i++) {
         pthread_join(workers[i], NULL);
     }
+    // closedir
 
     return 0;
 }
