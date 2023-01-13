@@ -4,44 +4,92 @@
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
-#include "task_queue.h"
+#include <sys/types.h>
+#include <dirent.h>
 
 // Initialize condition variable
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t waiting = PTHREAD_COND_INITIALIZER;
 
+// Globals
 char *global_search_string;
+// int done = 0;
 
-// Task queue
 struct queue *taskqueue;
+struct node {
+    char path[250];
+    struct node *next;
+};
+
+struct queue {
+    struct node *front;
+    struct node *rear;
+    pthread_mutex_t queue_lock;
+};
+
+// Task queue function signatures
+struct queue* initqueue();
+void enqueue(struct queue*, char*);
+int dequeue(struct queue*);
+void printqueue(struct queue*);
+
+//
 
 void *search(void *id) {
     uintptr_t worker_ID = (uintptr_t) id;
-    char *search_string = global_search_string;
+    char dir_path[250];
 
-    /// REMOVE THIS SECTION LATER
-    printf("Thread %ld searching for %s\n", worker_ID, search_string);
-    ///
+    while (1) { /// change to while all threads are not done
+        if(taskqueue->front != NULL){
 
-    // what the threads will do
-    /*
-    if taskqueue is empty:
-        thread goes to sleep.
-    else:
-        dequeue the task
-        printf("[%d] DIR %s\n", worker_ID, dir_path);
-        opendir
-        for (each child object accessed by readdir): // NOTE: ignore . and ..
-            if child is a directory:
-                enqueue new search to task queue containing the path to the said directory
-                printf("[%d] ENQUEUE %s\n", worker_ID, dir_path);
-            else if child is a file:
-                grep with arguments search_string and path via the system function where search_string is the search_string supplied as a program argument and path is the path (relative or absolute) of the said file;
-                if match found:
-                    printf("[%d] PRESENT %d\n", worker_ID, file_path)
-                else:
-                    printf("[%d] ABSENT %d\n", worker_ID, file_path)
-    */
+            // Take a new job
+            strcpy(dir_path, taskqueue->front->path);
+            dequeue(taskqueue);
+
+            char abs_path[250] = {0};
+            realpath(dir_path, abs_path);
+            printf("[%ld] DIR %s\n", worker_ID, abs_path);
+
+            DIR *dir = opendir(dir_path);
+            if (dir == NULL) continue;
+            struct dirent *content;
+
+            while ((content = readdir(dir)) != NULL) {
+                if (!strcmp(content->d_name, ".") || !strcmp(content->d_name, "..")) continue;
+
+                int type = content->d_type;
+                if (type == DT_DIR) {            // Child is a directory
+                    char new_path[250] = {0};
+                    strcat(new_path, dir_path);
+                    strcat(new_path, "/");
+                    strcat(new_path, content->d_name);
+                    enqueue(taskqueue, new_path);
+
+                    realpath(new_path, abs_path);
+                    printf("[%ld] ENQUEUE %s\n", worker_ID, abs_path);
+                }
+
+                else if (type == DT_REG) {       // Child is a file
+                    char grep_command[600];
+                    char file_path[250] = {0};
+                    strcat(file_path, dir_path);
+                    strcat(file_path, "/");
+                    strcat(file_path, content->d_name);
+                    sprintf(grep_command, "grep \"%s\" \"%s\" 1> /dev/null", global_search_string, file_path);
+
+                    int grep_retval = system(grep_command);
+                        realpath(file_path, abs_path);
+                        if (grep_retval == 0)
+                            printf("[%ld] PRESENT %s\n", worker_ID, abs_path);
+                        else
+                            printf("[%ld] ABSENT %s\n", worker_ID, abs_path);
+                }
+            }
+            closedir(dir);
+        }
+        else
+            break;
+    }
     return NULL;
 }
 
@@ -52,24 +100,13 @@ int main(int argc, char *argv[]) {
     char *rootpath = argv[2];
     char *search_string = argv[3];
     global_search_string = search_string;
-
-    /// REMOVE THIS SECTION LATER
-    // printf("you entered: %s, %s, %s\n", argv[1], argv[2], argv[3]);
-    // printf("%d threads will be searching %s for substring \"%s\".\n", n_workers, rootpath, search_string);
-    ///
-
-    /*
-    Your main process/thread is expected to terminate only after all workers have
-    terminated—it must block via pthread join or wait for the majority of the execution duration.
-    It must also enqueue `rootpath` before launching any of the workers.
-    */
     
     // Main thread enqueues rootpath
     taskqueue = initqueue();
     enqueue(taskqueue, rootpath);
 
     // Thread creation
-    pthread_t workers[n_workers]; // maybe use malloc instead?
+    pthread_t workers[n_workers]; /// maybe use malloc instead?
     for (uintptr_t i = 0; i < n_workers; i++) {
         pthread_create(&workers[i], NULL, search, (void *)i);
     }
@@ -82,13 +119,59 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-/*NOTES
-All executed instances of `grep` must not print anything on screen. You may redirect
-its standard output stream to /dev/null. Note that `system` executes its given as a shell
-command, so I/O redirection via > and < is supported.
+// TASK QUEUE METHODS
 
-Note as well that the return value of `system` corresponds to the exit code of the
-command—you may use this to determine whether a grep execution was able to find
-the search string in the file assigned to it.
-*/
+struct queue* initqueue() {
+    struct queue *tasks = (struct queue*)malloc(sizeof(struct queue));
+    tasks->front = NULL;
+    tasks->rear = NULL;
+    // pthread_mutex_t queue_lock = PTHREAD_MUTEX_INITIALIZER;
+    return tasks;
+}
 
+void enqueue(struct queue *tasks, char *path) {
+    struct node *newnode = (struct node*)malloc(sizeof(struct node));
+    assert(newnode != NULL);
+
+    strcpy(newnode->path, path);
+    newnode->next = NULL;
+
+    //lock this section//
+    if (tasks->front == NULL) {
+        tasks->front = newnode;
+        tasks->rear = newnode;
+    }
+    else {
+        tasks->rear->next = newnode;
+        tasks->rear = newnode;
+    }
+    //unlock//
+}
+
+int dequeue(struct queue *tasks) {
+    //lock this section//
+    struct node *temp = tasks->front;
+    if (temp == NULL) {
+        //unlock here//
+        return -1;
+    }
+    else {
+        tasks->front = temp->next;
+        //unlock here//
+        free(temp);
+        return 0;
+    }
+}
+
+void printqueue(struct queue *tasks) {
+    struct node *current = tasks->front;
+    if (current == NULL)
+        printf("No tasks queued.\n");
+    printf("QUEUE: ");
+    while(current != NULL) {
+        printf("%s--", current->path);
+        current = current->next;
+    }
+    printf("\n");
+    free(current);
+}

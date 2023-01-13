@@ -1,28 +1,38 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
 #include <sys/types.h>
 #include <dirent.h>
-#include "task_queue.h"
-
-// Initialize condition variable
-pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t waiting = PTHREAD_COND_INITIALIZER;
 
 // Globals
 char *global_search_string;
-int done = 0;
 
 struct queue *taskqueue;
+struct node {
+    char path[250];
+    struct node *next;
+};
+
+struct queue {
+    struct node *front;
+    struct node *rear;
+    pthread_mutex_t queue_lock;
+};
+
+// Task queue function signatures
+struct queue* initqueue();
+void enqueue(struct queue*, char*);
+int dequeue(struct queue*);
+void printqueue(struct queue*);
+
+//
 
 void *search(void *id) {
     uintptr_t worker_ID = (uintptr_t) id;
     char dir_path[250];
 
-    /// maybe have a different while condition, while all threads havent exited?? (use global done variable)
     while (1) {
         if(taskqueue->front != NULL){
 
@@ -80,43 +90,66 @@ void *search(void *id) {
 int main(int argc, char *argv[]) {
     assert(argc == 4);
 
-    int n_workers = 1; // single-threaded version
+    // int n_workers = argv[1]; // single-threaded version only uses the main thread
     char *rootpath = argv[2];
     char *search_string = argv[3];
     global_search_string = search_string;
-
-    /*
-    Your main process/thread is expected to terminate only after all workers have
-    terminated—it must block via pthread join or wait for the majority of the execution duration.
-    */
     
-    // Main thread enqueues rootpath
+    // Main thread enqueues rootpath and executes search
     taskqueue = initqueue();
     enqueue(taskqueue, rootpath);
-    // printqueue(taskqueue); ///
-
-    // Thread creation
-    pthread_t workers[n_workers]; /// maybe use malloc instead?
-    for (uintptr_t i = 0; i < n_workers; i++) {
-        pthread_create(&workers[i], NULL, search, (void *)i);
-    }
-
-    for (uintptr_t i = 0; i < n_workers; i++) {
-        pthread_join(workers[i], NULL);
-    }
-
-    // closedir
+    search(0);
 
     return 0;
 }
 
-/*NOTES
-All executed instances of `grep` must not print anything on screen. You may redirect
-its standard output stream to /dev/null. Note that `system` executes its given as a shell
-command, so I/O redirection via > and < is supported.
+// TASK QUEUE METHODS
 
-Note as well that the return value of `system` corresponds to the exit code of the
-command—you may use this to determine whether a grep execution was able to find
-the search string in the file assigned to it.
-*/
+struct queue* initqueue() {
+    struct queue *tasks = (struct queue*)malloc(sizeof(struct queue));
+    tasks->front = NULL;
+    tasks->rear = NULL;
+    return tasks;
+}
 
+void enqueue(struct queue *tasks, char *path) {
+    struct node *newnode = (struct node*)malloc(sizeof(struct node));
+    assert(newnode != NULL);
+
+    strcpy(newnode->path, path);
+    newnode->next = NULL;
+
+    if (tasks->front == NULL) {
+        tasks->front = newnode;
+        tasks->rear = newnode;
+    }
+    else {
+        tasks->rear->next = newnode;
+        tasks->rear = newnode;
+    }
+}
+
+int dequeue(struct queue *tasks) {
+    struct node *temp = tasks->front;
+    if (temp == NULL) {
+        return -1;
+    }
+    else {
+        tasks->front = temp->next;
+        free(temp);
+        return 0;
+    }
+}
+
+void printqueue(struct queue *tasks) {
+    struct node *current = tasks->front;
+    if (current == NULL)
+        printf("No tasks queued.\n");
+    printf("QUEUE: ");
+    while(current != NULL) {
+        printf("%s--", current->path);
+        current = current->next;
+    }
+    printf("\n");
+    free(current);
+}
