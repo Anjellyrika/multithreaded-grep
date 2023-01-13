@@ -29,7 +29,10 @@ void *search(void *id) {
             // Take a new job
             strcpy(dir_path, taskqueue->front->path);
             dequeue(taskqueue);
-            printf("[%ld] (///searching in) DIR %s\n", worker_ID, dir_path);
+
+            char abs_path[250] = {0};
+            realpath(dir_path, abs_path);
+            printf("[%ld] DIR %s\n", worker_ID, abs_path);
 
             DIR *dir = opendir(dir_path);
             if (dir == NULL) continue;
@@ -45,7 +48,9 @@ void *search(void *id) {
                     strcat(new_path, "/");
                     strcat(new_path, content->d_name);
                     enqueue(taskqueue, new_path);
-                    printf("[%ld] ENQUEUE %s\n", worker_ID, new_path);
+
+                    realpath(new_path, abs_path);
+                    printf("[%ld] ENQUEUE %s\n", worker_ID, abs_path);
                 }
 
                 else if (type == DT_REG) {       // Child is a file
@@ -54,13 +59,14 @@ void *search(void *id) {
                     strcat(file_path, dir_path);
                     strcat(file_path, "/");
                     strcat(file_path, content->d_name);
-                    sprintf(grep_command, "grep \"%s\" \"%s\"", global_search_string, file_path);
+                    sprintf(grep_command, "grep \"%s\" \"%s\" 1> /dev/null", global_search_string, file_path);
 
                     int grep_retval = system(grep_command);
+                        realpath(file_path, abs_path);
                         if (grep_retval == 0)
-                            printf("[%ld] PRESENT %s\n", worker_ID, file_path);
+                            printf("[%ld] PRESENT %s\n", worker_ID, abs_path);
                         else
-                            printf("[%ld] ABSENT %s\n", worker_ID, file_path);
+                            printf("[%ld] ABSENT %s\n", worker_ID, abs_path);
                 }
             }
             closedir(dir);
