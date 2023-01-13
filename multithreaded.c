@@ -8,12 +8,23 @@
 #include <dirent.h>
 
 // Initialize condition variable
-pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t waiting = PTHREAD_COND_INITIALIZER;
+// pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+// pthread_cond_t waiting = PTHREAD_COND_INITIALIZER;
+
+// Spin-lock
+int TestAndSet(int *old_ptr, int new) {
+    int old = *old_ptr;
+    *old_ptr = new;
+    return old;
+}
 
 // Globals
 char *global_search_string;
-// int done = 0;
+int global_n_workers;
+
+/// lock this!
+int done = 0;
+//
 
 struct queue *taskqueue;
 struct node {
@@ -39,12 +50,14 @@ void *search(void *id) {
     uintptr_t worker_ID = (uintptr_t) id;
     char dir_path[250];
 
-    while (1) { /// change to while all threads are not done
+    while (done < global_n_workers) { /// change to while all threads are not done
         if(taskqueue->front != NULL){
 
             // Take a new job
             strcpy(dir_path, taskqueue->front->path);
             dequeue(taskqueue);
+
+            printf("%ld now searching. Took job %s\n", worker_ID, dir_path); ///
 
             char abs_path[250] = {0};
             realpath(dir_path, abs_path);
@@ -87,8 +100,10 @@ void *search(void *id) {
             }
             closedir(dir);
         }
-        else
+        else {
+            printf("%ld now exiting.\n", worker_ID); ///
             break;
+        }
     }
     return NULL;
 }
@@ -99,6 +114,7 @@ int main(int argc, char *argv[]) {
     int n_workers = atoi(argv[1]);
     char *rootpath = argv[2];
     char *search_string = argv[3];
+    global_n_workers = n_workers;
     global_search_string = search_string;
     
     // Main thread enqueues rootpath
@@ -125,7 +141,7 @@ struct queue* initqueue() {
     struct queue *tasks = (struct queue*)malloc(sizeof(struct queue));
     tasks->front = NULL;
     tasks->rear = NULL;
-    // pthread_mutex_t queue_lock = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_t queue_lock = PTHREAD_MUTEX_INITIALIZER;
     return tasks;
 }
 
@@ -136,7 +152,7 @@ void enqueue(struct queue *tasks, char *path) {
     strcpy(newnode->path, path);
     newnode->next = NULL;
 
-    //lock this section//
+    pthread_mutex_lock(&tasks->queue_lock);
     if (tasks->front == NULL) {
         tasks->front = newnode;
         tasks->rear = newnode;
@@ -145,19 +161,19 @@ void enqueue(struct queue *tasks, char *path) {
         tasks->rear->next = newnode;
         tasks->rear = newnode;
     }
-    //unlock//
+    pthread_mutex_unlock(&tasks->queue_lock);
 }
 
 int dequeue(struct queue *tasks) {
-    //lock this section//
+    pthread_mutex_lock(&tasks->queue_lock);
     struct node *temp = tasks->front;
     if (temp == NULL) {
-        //unlock here//
+        pthread_mutex_unlock(&tasks->queue_lock);
         return -1;
     }
     else {
         tasks->front = temp->next;
-        //unlock here//
+        pthread_mutex_unlock(&tasks->queue_lock);
         free(temp);
         return 0;
     }
