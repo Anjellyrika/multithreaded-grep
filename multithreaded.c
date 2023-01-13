@@ -7,24 +7,18 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-// Initialize condition variable
-// pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+// Initialize lock and condition variable
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t increment_done_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t queue_lock = PTHREAD_MUTEX_INITIALIZER;
 // pthread_cond_t waiting = PTHREAD_COND_INITIALIZER;
-
-// Spin-lock
-int TestAndSet(int *old_ptr, int new) {
-    int old = *old_ptr;
-    *old_ptr = new;
-    return old;
-}
 
 // Globals
 char *global_search_string;
 int global_n_workers;
+int done_workers = 0; /// lock when incrementing this!
 
-/// lock this!
-int done = 0;
-//
+/// int backinloop = 0;
 
 struct queue *taskqueue;
 struct node {
@@ -41,7 +35,8 @@ struct queue {
 // Task queue function signatures
 struct queue* initqueue();
 void enqueue(struct queue*, char*);
-int dequeue(struct queue*);
+void dequeue(struct queue*);
+int isEmpty(struct queue*);
 void printqueue(struct queue*);
 
 //
@@ -50,13 +45,21 @@ void *search(void *id) {
     uintptr_t worker_ID = (uintptr_t) id;
     char dir_path[250];
 
-    while (done < global_n_workers) { /// change to while all threads are not done
-        if(taskqueue->front != NULL){
-
+    while (done_workers < global_n_workers) {
+        if(!isEmpty(taskqueue)){
+            
             // Take a new job
+            // printf("Threads are stuck at point 2.\n"); ////2
+            pthread_mutex_lock(&lock);  // Only one thread can take a single job at a time
+            printf("%ld acquired lock.\n", worker_ID); ///
+            printqueue(taskqueue); ///
+            if(isEmpty(taskqueue)) {
+                pthread_mutex_unlock(&lock);
+                continue;    // Continue loop if task queue has become empty.
+            }
             strcpy(dir_path, taskqueue->front->path);
             dequeue(taskqueue);
-
+            pthread_mutex_unlock(&lock);
             printf("%ld now searching. Took job %s\n", worker_ID, dir_path); ///
 
             char abs_path[250] = {0};
@@ -64,7 +67,13 @@ void *search(void *id) {
             printf("[%ld] DIR %s\n", worker_ID, abs_path);
 
             DIR *dir = opendir(dir_path);
-            if (dir == NULL) continue;
+            // if (dir == NULL) {
+            //     printf("%ld finished.\n", worker_ID);
+            //     pthread_mutex_lock(&increment_done_lock);
+            //     done_workers++;
+            //     printf("%ld finished.\n", worker_ID);
+            //     pthread_mutex_unlock(&increment_done_lock);
+            // }
             struct dirent *content;
 
             while ((content = readdir(dir)) != NULL) {
@@ -72,6 +81,8 @@ void *search(void *id) {
 
                 int type = content->d_type;
                 if (type == DT_DIR) {            // Child is a directory
+                    // printf("Threads are stuck at point 3.\n"); ////3
+                    pthread_mutex_lock(&lock);  // Only one thread can modify task queue at a time
                     char new_path[250] = {0};
                     strcat(new_path, dir_path);
                     strcat(new_path, "/");
@@ -80,6 +91,7 @@ void *search(void *id) {
 
                     realpath(new_path, abs_path);
                     printf("[%ld] ENQUEUE %s\n", worker_ID, abs_path);
+                    pthread_mutex_unlock(&lock);
                 }
 
                 else if (type == DT_REG) {       // Child is a file
@@ -101,8 +113,7 @@ void *search(void *id) {
             closedir(dir);
         }
         else {
-            printf("%ld now exiting.\n", worker_ID); ///
-            break;
+            continue;
         }
     }
     return NULL;
@@ -141,7 +152,7 @@ struct queue* initqueue() {
     struct queue *tasks = (struct queue*)malloc(sizeof(struct queue));
     tasks->front = NULL;
     tasks->rear = NULL;
-    pthread_mutex_t queue_lock = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_t queue_lock;
     return tasks;
 }
 
@@ -164,26 +175,40 @@ void enqueue(struct queue *tasks, char *path) {
     pthread_mutex_unlock(&tasks->queue_lock);
 }
 
-int dequeue(struct queue *tasks) {
+void dequeue(struct queue *tasks) {
     pthread_mutex_lock(&tasks->queue_lock);
     struct node *temp = tasks->front;
     if (temp == NULL) {
         pthread_mutex_unlock(&tasks->queue_lock);
-        return -1;
+        return;
     }
     else {
         tasks->front = temp->next;
         pthread_mutex_unlock(&tasks->queue_lock);
         free(temp);
+        return;
+    }
+}
+
+int isEmpty(struct queue *tasks) {
+    pthread_mutex_lock(&tasks->queue_lock);
+    if (tasks->front == NULL) {
+        pthread_mutex_unlock(&tasks->queue_lock);
+        return 1;
+    }
+    else {
+        pthread_mutex_unlock(&tasks->queue_lock);
         return 0;
     }
 }
 
 void printqueue(struct queue *tasks) {
     struct node *current = tasks->front;
-    if (current == NULL)
+    if (current == NULL) {
         printf("No tasks queued.\n");
-    printf("QUEUE: ");
+        return;    
+    }
+    printf("\nQUEUE: ");
     while(current != NULL) {
         printf("%s--", current->path);
         current = current->next;
