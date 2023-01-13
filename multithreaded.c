@@ -15,10 +15,7 @@ pthread_mutex_t queue_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // Globals
 char *global_search_string;
-int global_n_workers;
-int done_workers = 0; /// lock when incrementing this!
-
-/// int backinloop = 0;
+int open_dirs = 1;
 
 struct queue *taskqueue;
 struct node {
@@ -45,14 +42,13 @@ void *search(void *id) {
     uintptr_t worker_ID = (uintptr_t) id;
     char dir_path[250];
 
-    while (done_workers < global_n_workers) {
+    while (open_dirs > 0) {
         if(!isEmpty(taskqueue)){
             
             // Take a new job
-            // printf("Threads are stuck at point 2.\n"); ////2
             pthread_mutex_lock(&lock);  // Only one thread can take a single job at a time
-            printf("%ld acquired lock.\n", worker_ID); ///
-            printqueue(taskqueue); ///
+            // printf("%ld acquired lock.\n", worker_ID); ///
+            // printqueue(taskqueue); ///
             if(isEmpty(taskqueue)) {
                 pthread_mutex_unlock(&lock);
                 continue;    // Continue loop if task queue has become empty.
@@ -60,20 +56,14 @@ void *search(void *id) {
             strcpy(dir_path, taskqueue->front->path);
             dequeue(taskqueue);
             pthread_mutex_unlock(&lock);
-            printf("%ld now searching. Took job %s\n", worker_ID, dir_path); ///
+            // printf("%ld now searching. Took job %s\n", worker_ID, dir_path); ///
 
             char abs_path[250] = {0};
             realpath(dir_path, abs_path);
             printf("[%ld] DIR %s\n", worker_ID, abs_path);
 
             DIR *dir = opendir(dir_path);
-            // if (dir == NULL) {
-            //     printf("%ld finished.\n", worker_ID);
-            //     pthread_mutex_lock(&increment_done_lock);
-            //     done_workers++;
-            //     printf("%ld finished.\n", worker_ID);
-            //     pthread_mutex_unlock(&increment_done_lock);
-            // }
+            if (dir == NULL) continue;
             struct dirent *content;
 
             while ((content = readdir(dir)) != NULL) {
@@ -81,7 +71,6 @@ void *search(void *id) {
 
                 int type = content->d_type;
                 if (type == DT_DIR) {            // Child is a directory
-                    // printf("Threads are stuck at point 3.\n"); ////3
                     pthread_mutex_lock(&lock);  // Only one thread can modify task queue at a time
                     char new_path[250] = {0};
                     strcat(new_path, dir_path);
@@ -91,6 +80,7 @@ void *search(void *id) {
 
                     realpath(new_path, abs_path);
                     printf("[%ld] ENQUEUE %s\n", worker_ID, abs_path);
+                    open_dirs++;
                     pthread_mutex_unlock(&lock);
                 }
 
@@ -111,6 +101,7 @@ void *search(void *id) {
                 }
             }
             closedir(dir);
+            open_dirs--;
         }
         else {
             continue;
@@ -125,7 +116,6 @@ int main(int argc, char *argv[]) {
     int n_workers = atoi(argv[1]);
     char *rootpath = argv[2];
     char *search_string = argv[3];
-    global_n_workers = n_workers;
     global_search_string = search_string;
     
     // Main thread enqueues rootpath
@@ -133,7 +123,7 @@ int main(int argc, char *argv[]) {
     enqueue(taskqueue, rootpath);
 
     // Thread creation
-    pthread_t workers[n_workers]; /// maybe use malloc instead?
+    pthread_t workers[n_workers];
     for (uintptr_t i = 0; i < n_workers; i++) {
         pthread_create(&workers[i], NULL, search, (void *)i);
     }
