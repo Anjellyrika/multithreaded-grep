@@ -47,20 +47,18 @@ void enqueue(struct queue *tasks, char *path) {
     //unlock//
 }
 
-char* dequeue(struct queue *tasks) {
+int dequeue(struct queue *tasks) {
     //lock this section//
     struct node *temp = tasks->front;
     if (temp == NULL) {
         //unlock here//
-        return "empty";
+        return -1;
     }
     else {
-        char *retval;
-        strcpy(retval, temp->path);
         tasks->front = temp->next;
         //unlock here//
         free(temp);
-        return retval;
+        return 0;
     }
 }
 
@@ -68,8 +66,11 @@ void printqueue(struct queue *tasks) {
     struct node *current = tasks->front;
     if (current == NULL)
         printf("No tasks queued.\n");
+    printf("QUEUE: ");
     while(current != NULL) {
-        printf("%s - ", current->path);
+        printf("%s--", current->path);
         current = current->next;
     }
+    printf("\n");
+    free(current);
 }

@@ -12,6 +12,9 @@ pthread_cond_t waiting = PTHREAD_COND_INITIALIZER;
 
 char *global_search_string;
 
+// Task queue
+struct queue *taskqueue;
+
 void *search(void *id) {
     uintptr_t worker_ID = (uintptr_t) id;
     char *search_string = global_search_string;
@@ -61,21 +64,9 @@ int main(int argc, char *argv[]) {
     It must also enqueue `rootpath` before launching any of the workers.
     */
     
-    // Initialize task queue
-    struct queue *taskqueue = initqueue();
-    printqueue(taskqueue);
-    printf("initialize successful.\n");
-
-    enqueue(taskqueue, "pp");
-    enqueue(taskqueue, "rawrxd");
-    enqueue(taskqueue, "testdir");
-    printqueue(taskqueue);
-    printf("\nenqueue successful. \n");
-
-    char *tosearch = dequeue(taskqueue);
-    printf("dequeued %s\n", tosearch);
-    printqueue(taskqueue);
-    printf("\ndequeue successful. \n");
+    // Main thread enqueues rootpath
+    taskqueue = initqueue();
+    enqueue(taskqueue, rootpath);
 
     // Thread creation
     pthread_t workers[n_workers]; // maybe use malloc instead?
