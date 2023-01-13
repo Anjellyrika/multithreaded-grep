@@ -7,11 +7,9 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-// Initialize lock and condition variable
+// Initialize locks
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t increment_done_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t queue_lock = PTHREAD_MUTEX_INITIALIZER;
-// pthread_cond_t waiting = PTHREAD_COND_INITIALIZER;
 
 // Globals
 char *global_search_string;
@@ -43,7 +41,12 @@ void *search(void *id) {
     char dir_path[250];
 
     while (open_dirs > 0) {
-        if(!isEmpty(taskqueue)){
+        int empty = 0;
+        pthread_mutex_lock(&lock);
+            empty = isEmpty(taskqueue);
+        pthread_mutex_unlock(&lock);
+        
+        if(!empty){
             
             // Take a new job
             pthread_mutex_lock(&lock);  // Only one thread can take a single job at a time
@@ -80,7 +83,9 @@ void *search(void *id) {
 
                     realpath(new_path, abs_path);
                     printf("[%ld] ENQUEUE %s\n", worker_ID, abs_path);
+                    pthread_mutex_lock(&increment_done_lock);
                     open_dirs++;
+                    pthread_mutex_unlock(&increment_done_lock);
                     pthread_mutex_unlock(&lock);
                 }
 
@@ -101,7 +106,9 @@ void *search(void *id) {
                 }
             }
             closedir(dir);
+            pthread_mutex_lock(&increment_done_lock);
             open_dirs--;
+            pthread_mutex_unlock(&increment_done_lock);
         }
         else {
             continue;
@@ -142,7 +149,7 @@ struct queue* initqueue() {
     struct queue *tasks = (struct queue*)malloc(sizeof(struct queue));
     tasks->front = NULL;
     tasks->rear = NULL;
-    pthread_mutex_t queue_lock;
+    pthread_mutex_init(&tasks->queue_lock, NULL);
     return tasks;
 }
 
