@@ -18,7 +18,6 @@ struct node {
 struct queue {
     struct node *front;
     struct node *rear;
-    pthread_mutex_t queue_lock;
 };
 
 // Task queue function signatures
@@ -99,6 +98,8 @@ int main(int argc, char *argv[]) {
     taskqueue = initqueue();
     enqueue(taskqueue, rootpath);
     search(0);
+
+    free(taskqueue);
 
     return 0;
 }

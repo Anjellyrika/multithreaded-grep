@@ -50,8 +50,6 @@ void *search(void *id) {
             
             // Take a new job
             pthread_mutex_lock(&lock);  // Only one thread can take a single job at a time
-            // printf("%ld acquired lock.\n", worker_ID); ///
-            // printqueue(taskqueue); ///
             if(isEmpty(taskqueue)) {
                 pthread_mutex_unlock(&lock);
                 continue;    // Continue loop if task queue has become empty.
@@ -59,7 +57,6 @@ void *search(void *id) {
             strcpy(dir_path, taskqueue->front->path);
             dequeue(taskqueue);
             pthread_mutex_unlock(&lock);
-            // printf("%ld now searching. Took job %s\n", worker_ID, dir_path); ///
 
             char abs_path[250] = {0};
             realpath(dir_path, abs_path);
@@ -138,7 +135,8 @@ int main(int argc, char *argv[]) {
     for (uintptr_t i = 0; i < n_workers; i++) {
         pthread_join(workers[i], NULL);
     }
-    // closedir
+    
+    free(taskqueue);
 
     return 0;
 }
